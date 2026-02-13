@@ -1,0 +1,44 @@
+{
+    "backgrounds": {
+        "studio_white": "professional product photography, pure white seamless background, soft diffused studio lighting, high-end commercial aesthetic",
+        "studio_black": "elegant luxury product photography, pure black background, dramatic rim lighting, high contrast",
+        "studio_gray": "neutral gray background, even soft lighting, clean minimal product photography",
+        "outdoor_summer": "outdoor summer lifestyle photoshoot, Moscow city streets, natural daylight, urban fashion aesthetic",
+        "outdoor_nature": "outdoor nature background, soft natural lighting, green foliage, lifestyle photography",
+        "indoor_modern": "modern minimalist interior, clean lines, contemporary design, soft ambient lighting"
+    },
+    "products": {
+        "hat": "wearing the product hat on head, styled naturally",
+        "glasses": "wearing the product glasses, confident stylish expression",
+        "sunglasses": "wearing the product sunglasses, fashionable summer look",
+        "tshirt": "wearing the product t-shirt, casual relaxed pose",
+        "hoodie": "wearing the product hoodie, comfortable urban style",
+        "jacket": "wearing the product jacket, styled outerwear look",
+        "dress": "wearing the product dress, elegant feminine pose",
+        "pants": "wearing the product pants, full body visible",
+        "shoes": "wearing the product shoes, legs and feet visible in frame",
+        "bag": "holding or wearing the product bag, accessory visible",
+        "jewelry": "wearing the product jewelry, close-up detail visible",
+        "watch": "wearing the product watch on wrist, visible and prominent"
+    },
+    "poses": {
+        "front": "front facing view, looking directly at camera, confident expression",
+        "side": "side profile view, elegant pose, clean silhouette",
+        "three_quarter": "three-quarter angle view, natural stance, relaxed posture",
+        "back": "back view, showing rear of outfit, over-shoulder glance",
+        "dynamic": "dynamic action pose, movement captured, energetic feel",
+        "seated": "seated relaxed pose, casual and approachable",
+        "walking": "mid-walk pose, natural stride, lifestyle feel",
+        "leaning": "leaning against wall or surface, casual confident pose"
+    },
+    "gender": {
+        "male": "handsome male model, masculine features, well-groomed",
+        "female": "beautiful female model, feminine features, elegant"
+    },
+    "style_modifiers": {
+        "commercial": "high-end commercial photography, magazine quality, sharp focus",
+        "editorial": "editorial fashion photography, artistic composition, creative lighting",
+        "lifestyle": "lifestyle photography, natural candid feel, authentic moment",
+        "catalog": "clean catalog product photography, neutral expression, product focus"
+    }
+}

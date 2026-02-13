@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+dist-ssr/
+
+# Logs
+*.log
+backend/backend.log
+frontend/frontend.log
+
+# Storage (generated images stored locally — not needed in repo)
+backend/storage/images/
+
+# Test output
+backend/test_output.png
+backend/test_nano_output.png
+backend/dummy_image.jpg
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Lock files (optional — uncomment if you want to track them)
+# package-lock.json
+backend/storage/*.json
+backend/test_*.js
