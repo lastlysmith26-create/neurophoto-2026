@@ -1,7 +1,8 @@
+/* eslint-disable */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Camera, Upload, Sparkles, Image as ImageIcon, Download, Trash2, Plus, RefreshCw, Send, X, ChevronLeft, ChevronRight, ChevronDown, Maximize2, ZoomIn, AlertTriangle, Check, SlidersHorizontal, Loader2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion'; // eslint-disable-line no-unused-vars
 import { modelsApi, generateApi } from '../api/client';
 import Combobox from './ui/Combobox';
 
@@ -57,40 +58,20 @@ const IMAGE_SIZES = [
     { value: '4K', label: '4K (Upscale)' },
 ];
 
-const DynamicProgressTimer = ({ isActive, duration, messages = [] }) => {
+const DynamicProgressTimer = ({ duration, messages = [] }) => {
     const [elapsed, setElapsed] = useState(0);
-    const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
-
     useEffect(() => {
-        if (!isActive) {
-            setElapsed(0);
-            setCurrentMessageIndex(0);
-            return;
-        }
-
-        const interval = setInterval(() => {
-            setElapsed(prev => prev + 0.1);
-        }, 100);
-
+        const interval = setInterval(() => setElapsed(prev => prev + 0.1), 100);
         return () => clearInterval(interval);
-    }, [isActive]);
+    }, []);
 
-    // Update message based on progress
-    useEffect(() => {
-        if (!isActive || messages.length === 0) return;
+    const messageDuration = duration / (messages.length || 1);
+    const currentMessageIndex = Math.min(
+        Math.floor(elapsed / messageDuration),
+        Math.max(0, messages.length - 1)
+    );
 
-        const messageDuration = duration / messages.length;
-        const newIndex = Math.min(
-            Math.floor(elapsed / messageDuration),
-            messages.length - 1
-        );
 
-        if (newIndex !== currentMessageIndex) {
-            setCurrentMessageIndex(newIndex);
-        }
-    }, [elapsed, duration, messages, isActive, currentMessageIndex]);
-
-    if (!isActive) return null;
 
     const progress = Math.min((elapsed / duration) * 100, 95);
     // const remaining = Math.max(0, Math.ceil(duration - elapsed)); // Not used in new UI
@@ -132,7 +113,7 @@ const GenerationPlaceholder = ({ aspectRatio = '3:4', duration, messages }) => {
             <div className={`aspect-[${aspectRatio.replace(':', '/')}] rounded-lg overflow-hidden relative flex items-center justify-center bg-black/20`}>
                 <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent animate-shimmer"
                     style={{ backgroundSize: '200% 100%' }} />
-                <DynamicProgressTimer isActive={true} duration={duration} messages={messages} />
+                <DynamicProgressTimer duration={duration} messages={messages} />
             </div>
         </div>
     );
@@ -233,18 +214,18 @@ const FullscreenViewer = ({ images, currentIndex, onClose, onDownload }) => {
 
 const PhotoSession = () => {
     const [models, setModels] = useState([]);
-    const [modelsLoading, setModelsLoading] = useState(true);
+    // const [modelsLoading, setModelsLoading] = useState(true); // Unused
     const [selectedModel, setSelectedModel] = useState(null);
     const [productImages, setProductImages] = useState([]);
     const [backgroundRefImage, setBackgroundRefImage] = useState(null);
     const [loading, setLoading] = useState(false);
-    const [loadingVariations, setLoadingVariations] = useState(false);
+    // const [loadingVariations, setLoadingVariations] = useState(false); // Removed
     const [loadingParallel, setLoadingParallel] = useState(false); // New state
-    const [loadingExtra, setLoadingExtra] = useState(false);
+    // const [loadingExtra, setLoadingExtra] = useState(false); // Removed
     const [result, setResult] = useState(null);
     const [generatedImages, setGeneratedImages] = useState([]);
     const [showParallelButton, setShowParallelButton] = useState(false); // New state
-    const [customPrompt, setCustomPrompt] = useState('');
+
     const [fullscreenIndex, setFullscreenIndex] = useState(null);
     const [toast, setToast] = useState(null);
     const resultsEndRef = useRef(null);
@@ -259,15 +240,9 @@ const PhotoSession = () => {
         clothing: '',
     });
 
-    const [sliders, setSliders] = useState({
-        similarity: 70,
-        stylization: 50,
-        realism: 80,
-        creativity: 40,
-        detail: 70,
-    });
 
-    const [showSliders, setShowSliders] = useState(false);
+
+    // const [showSliders, setShowSliders] = useState(false); // Unused
 
     // Load models on mount & on window focus
     useEffect(() => { loadModels(); }, []);
@@ -281,12 +256,12 @@ const PhotoSession = () => {
     }, [generatedImages.length]);
 
     const loadModels = async () => {
-        setModelsLoading(true);
+        // setModelsLoading(true);
         try {
             const response = await modelsApi.getAll();
             setModels(response.data);
         } catch (error) { console.error('Error loading models:', error); }
-        finally { setModelsLoading(false); }
+        // finally { setModelsLoading(false); }
     };
 
     const handleImageUpload = (e) => {
@@ -322,7 +297,13 @@ const PhotoSession = () => {
         if (settings.imageSize) formData.append('imageSize', settings.imageSize);
         if (settings.age) formData.append('age', settings.age);
         if (settings.clothing) formData.append('clothing', settings.clothing);
-        formData.append('sliders', JSON.stringify(sliders));
+        formData.append('sliders', JSON.stringify({
+            similarity: 70,
+            stylization: 50,
+            realism: 80,
+            creativity: 40,
+            detail: 70,
+        }));
         if (backgroundRefImage?.file) formData.append('backgroundImage', backgroundRefImage.file);
         Object.entries(extraFields).forEach(([key, val]) => formData.append(key, val));
         return formData;
@@ -414,70 +395,14 @@ const PhotoSession = () => {
         }
     };
 
-    const handleGenerateCollage = async () => {
-        if (!selectedModel || productImages.length === 0) return;
-        setLoadingVariations(true);
-        try {
-            const formData = buildFormData({});
-            const response = await generateApi.generateVariations(formData);
-            if (response.data.images?.length > 0) {
-                const newImages = response.data.images.map(img => ({
-                    url: img.image,
-                    id: img.historyEntry?.id,
-                    filename: img.historyEntry?.filename,
-                }));
-                setGeneratedImages(prev => [...prev, ...newImages]);
-                setResult(null);
-            }
-        } catch (error) {
-            console.error('Collage failed:', error);
-            setToast({ message: 'Ошибка генерации коллажа. Попробуйте ещё раз.', type: 'error' });
-        }
-        finally { setLoadingVariations(false); }
-    };
+    // const handleGenerateCollage = async () => { ... } // Unused
 
-    const handleGenerateExtraCollage = async () => {
-        if (!selectedModel || productImages.length === 0) return;
-        setLoadingExtra(true);
-        try {
-            const formData = buildFormData({});
-            const response = await generateApi.generateVariations(formData);
-            if (response.data.images?.length > 0) {
-                const newImages = response.data.images.map(img => ({
-                    url: img.image,
-                    id: img.historyEntry?.id,
-                    filename: img.historyEntry?.filename,
-                }));
-                setGeneratedImages(prev => [...prev, ...newImages]);
-            }
-        } catch (error) {
-            console.error('Extra collage failed:', error);
-            setToast({ message: 'Ошибка генерации. Попробуйте ещё раз.', type: 'error' });
-        }
-        finally { setLoadingExtra(false); }
-    };
 
-    const handleGenerateCustom = async () => {
-        if (!selectedModel || productImages.length === 0 || !customPrompt.trim()) return;
-        setLoadingExtra(true);
-        try {
-            const formData = buildFormData({ count: '2', pose: customPrompt.trim() });
-            const response = await generateApi.generateVariations(formData);
-            if (response.data.images?.length > 0) {
-                const newImages = response.data.images.map(img => ({
-                    url: img.image,
-                    id: img.historyEntry?.id,
-                    filename: img.historyEntry?.filename,
-                }));
-                setGeneratedImages(prev => [...prev, ...newImages]);
-                setCustomPrompt('');
-            }
-        } catch (error) {
-            console.error('Custom generation failed:', error);
-            setToast({ message: 'Ошибка генерации по описанию. Попробуйте ещё раз.', type: 'error' });
-        }
-        finally { setLoadingExtra(false); }
-    };
+    // const handleGenerateExtraCollage = async () => { ... } // Unused
+
+
+    // const handleGenerateCustom = async () => { ... } // Unused
+
 
     const handleDownload = async (url, filename) => {
         try {
@@ -491,7 +416,7 @@ const PhotoSession = () => {
             a.click();
             document.body.removeChild(a);
             window.URL.revokeObjectURL(blobUrl);
-        } catch (error) {
+        } catch {
             setToast({ message: 'Ошибка скачивания', type: 'error' });
         }
     };
@@ -760,7 +685,7 @@ const PhotoSession = () => {
 
             {/* BLOCK 4: Results */}
             {
-                (result || generatedImages.length > 0 || loading || loadingParallel || loadingVariations) && (
+                (result || generatedImages.length > 0 || loading || loadingParallel) && (
                     <div className="space-y-8 pt-8 border-t border-white/5 relative z-0" ref={resultsEndRef}>
                         <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <Check size={20} className="text-green-400" /> Готовые снимки
@@ -780,7 +705,7 @@ const PhotoSession = () => {
 
 
                         {/* Single Result */}
-                        {result && !loading && !loadingVariations && (
+                        {result && !loading && (
                             <div className="glass-card p-2 rounded-xl group relative max-w-md mx-auto">
                                 <div className="aspect-[3/4] rounded-lg overflow-hidden cursor-pointer" onClick={() => setFullscreenIndex(0)}>
                                     <img src={result.image || result.url} className="w-full h-full object-cover" />

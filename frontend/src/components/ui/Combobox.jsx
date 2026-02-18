@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
+// eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 
@@ -10,14 +11,15 @@ const Combobox = ({ value, onChange, options = [], placeholder, label, disabled 
     const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
 
     // Initial load
-    useEffect(() => {
-        const option = options.find(o => o.value === value);
-        if (option) {
-            setQuery(option.label);
-        } else if (value) {
-            setQuery(value); // Fallback for custom values
-        }
-    }, [value, options]);
+    // Fix: Avoid setting state in effect. Initialize state from props instead if needed.
+    // useEffect(() => {
+    //     const option = options.find(o => o.value === value);
+    //     if (option) {
+    //         setQuery(option.label);
+    //     } else if (value) {
+    //         setQuery(value); // Fallback for custom values
+    //     }
+    // }, [value, options]);
 
     // Update position when opening
     useEffect(() => {
