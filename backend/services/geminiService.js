@@ -1,7 +1,7 @@
 const { GoogleGenAI, Modality } = require("@google/genai");
 const fs = require("fs");
 const path = require("path");
-const PQueue = require("p-queue");
+const PQueue = require("p-queue").default;
 const { buildProductPrompt, buildModelPreviewPrompt, buildModelAnglePrompt, buildModelAngleCollagePrompt, buildCollagePrompt } = require("./promptBuilder");
 
 // Global Queue for concurrency control
