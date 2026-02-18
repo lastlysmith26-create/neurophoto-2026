@@ -60,16 +60,16 @@ router.post("/", upload.fields([{ name: 'productImage', maxCount: 1 }, { name: '
         const service = getGeminiService();
         if (!service) return res.status(400).json({ error: "API key not configured" });
 
-        const { modelId, productType, background, pose, gender, aspectRatio, imageSize } = req.body;
+        const { modelId, productType, background, pose, gender, aspectRatio, imageSize, age, clothing, sliders: slidersJson } = req.body;
         const productImage = req.files?.productImage?.[0]?.buffer || null;
         const backgroundImage = req.files?.backgroundImage?.[0]?.buffer || null;
+        const sliders = slidersJson ? JSON.parse(slidersJson) : null;
 
         // Fetch user's model from Supabase
         const { data: model, error: modelError } = await supabase
             .from('models')
             .select('*')
             .eq('id', modelId)
-            // .eq('user_id', user.id) // RLS handles this
             .single();
 
         if (modelError || !model) return res.status(404).json({ error: "Model not found" });
@@ -86,6 +86,9 @@ router.post("/", upload.fields([{ name: 'productImage', maxCount: 1 }, { name: '
             gender,
             aspectRatio,
             imageSize,
+            age,
+            clothing,
+            sliders,
         });
 
         // Upload generated image to Supabase
@@ -131,12 +134,14 @@ router.post("/preview", upload.single("referencePhoto"), async (req, res) => {
         const service = getGeminiService();
         if (!service) return res.status(400).json({ error: "API key not configured" });
 
-        const { description, gender } = req.body;
+        const { description, gender, age, height } = req.body;
         const referencePhoto = req.file ? req.file.buffer.toString("base64") : null;
 
         const result = await service.generateModelPreview({
             description,
             gender,
+            age,
+            height,
             referencePhoto,
         });
 
@@ -152,34 +157,35 @@ router.post("/preview", upload.single("referencePhoto"), async (req, res) => {
     }
 });
 
-// Generate 4 angles of model (no product)
+// Generate model angles as 2×2 collage (single image)
 router.post("/angles", upload.single("referencePhoto"), async (req, res) => {
     try {
         const service = getGeminiService();
         if (!service) return res.status(400).json({ error: "API key not configured" });
 
-        const { description, gender } = req.body;
+        const { description, gender, age, height } = req.body;
         const referencePhoto = req.file ? req.file.buffer.toString("base64") : null;
 
-        const results = await service.generateModelAngles({
+        const result = await service.generateModelAngles({
             description,
             gender,
+            age,
+            height,
             referencePhoto,
         });
 
-        const images = results.map(r => ({
-            image: r.imageData.toString("base64"),
-            mimeType: r.mimeType,
-            framing: r.framing,
-        }));
-
+        // Return single collage image in same format
         res.json({
             success: true,
-            count: images.length,
-            images,
+            count: 1,
+            images: [{
+                image: result.imageData.toString("base64"),
+                mimeType: result.mimeType,
+                framing: "collage",
+            }],
         });
     } catch (error) {
-        console.error("Angles generation error:", error);
+        console.error("Angles collage error:", error);
         res.status(500).json({ error: error.message || "Angles generation failed" });
     }
 });
@@ -197,10 +203,10 @@ router.post("/variations", upload.fields([{ name: 'productImage', maxCount: 1 },
         const service = getGeminiService();
         if (!service) return res.status(400).json({ error: "API key not configured" });
 
-        const { modelId, productType, background, pose, gender, aspectRatio, imageSize, count } = req.body;
+        const { modelId, productType, background, pose, gender, aspectRatio, imageSize, age, clothing, sliders: slidersJson } = req.body;
         const productImage = req.files?.productImage?.[0]?.buffer || null;
         const backgroundImage = req.files?.backgroundImage?.[0]?.buffer || null;
-        const variationCount = parseInt(count) || 2; // Default to 2 if not strict 10 (or use specific logic)
+        const sliders = slidersJson ? JSON.parse(slidersJson) : null;
 
         // Fetch user's model from Supabase
         const { data: model, error: modelError } = await supabase
@@ -211,35 +217,151 @@ router.post("/variations", upload.fields([{ name: 'productImage', maxCount: 1 },
 
         if (modelError || !model) return res.status(404).json({ error: "Model not found" });
 
-        // Generate variations
-        // We can pass 'count' to generateVariations method if we modify it to accept dynamic count, 
-        // currently it takes baseParams and uses a loop.
-        // geminiService.generateVariations(baseParams, count)
-        const variations = await service.generateVariations({
+        // Generate 2×2 collage (single image, consistent face)
+        const result = await service.generateCollage({
             modelDescription: model.description,
             modelPhotos: model.photos,
             productType,
             productImage,
             backgroundImage,
             background,
-            pose, // This might be ignored or used as base
             gender,
             aspectRatio,
             imageSize,
-        }, variationCount);
+            age,
+            clothing,
+            sliders,
+        });
 
-        const savedImages = [];
+        // Upload single collage image
+        const filename = `${user.id}/${Date.now()}_collage.png`;
+        const imageUrl = await uploadToSupabase(supabase, result.imageData, filename, 'image/png');
 
-        // Upload and save each variation
-        for (let i = 0; i < variations.length; i++) {
-            const result = variations[i];
-            const filename = `${user.id}/${Date.now()}_var_${i}.png`;
+        // Save to generations table
+        const { data: dbData, error: dbError } = await supabase
+            .from('generations')
+            .insert([{
+                user_id: user.id,
+                model_id: modelId,
+                image_url: imageUrl,
+                filename: filename,
+                product_type: productType,
+                background: background,
+                pose: 'collage 2×2',
+                is_variation: true,
+                parameters: { aspectRatio: '1:1', imageSize }
+            }])
+            .select()
+            .single();
 
+        if (dbError) {
+            console.error("DB Save Error for collage:", dbError);
+        }
+
+        res.json({
+            success: true,
+            count: 1,
+            images: [{
+                image: imageUrl,
+                historyEntry: dbData ? {
+                    id: dbData.id,
+                    filename: filename,
+                    image_url: imageUrl
+                } : null
+            }]
+        });
+
+    } catch (error) {
+        console.error("Collage generation error:", error);
+        res.status(500).json({ error: error.message || "Collage generation failed" });
+    }
+});
+
+// Generate 4 parallel variations with streaming response (SSE/NDJSON-like)
+router.post("/parallel", upload.fields([{ name: 'productImage', maxCount: 1 }, { name: 'backgroundImage', maxCount: 1 }]), async (req, res) => {
+    // Set headers for streaming
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    try {
+        // Authenticate user
+        let user;
+        try {
+            const token = req.headers.authorization?.split(' ')[1] || req.query.token; // Support token in query for EventSource if needed
+            if (!token) throw new Error("Unauthorized");
+
+            const supabase = getScopedSupabase(token);
+            const { data, error } = await supabase.auth.getUser();
+            if (error || !data.user) throw new Error("Unauthorized");
+            user = data.user;
+        } catch (e) {
+            res.write(`data: ${JSON.stringify({ error: "Unauthorized" })}\n\n`);
+            return res.end();
+        }
+
+        const supabase = getScopedSupabase(req.headers.authorization?.split(' ')[1]);
+        const service = getGeminiService();
+
+        if (!service) {
+            res.write(`data: ${JSON.stringify({ error: "API key not configured" })}\n\n`);
+            return res.end();
+        }
+
+        const { modelId, productType, background, gender, aspectRatio, imageSize, age, clothing, sliders: slidersJson } = req.body;
+        const productImage = req.files?.productImage?.[0]?.buffer || null;
+        const backgroundImage = req.files?.backgroundImage?.[0]?.buffer || null;
+        const sliders = slidersJson ? JSON.parse(slidersJson) : null;
+
+        // Fetch user's model
+        const { data: model } = await supabase
+            .from('models')
+            .select('*')
+            .eq('id', modelId)
+            .single();
+
+        if (!model) {
+            res.write(`data: ${JSON.stringify({ error: "Model not found" })}\n\n`);
+            return res.end();
+        }
+
+        // Define 4 distinct poses/prompts
+        const VARIATION_POSES = [
+            "Front view looking at camera",
+            "Side profile view",
+            "3/4 angle view",
+            "Dynamic fashion pose"
+        ];
+
+        // Notify start
+        res.write(`data: ${JSON.stringify({ type: 'start', count: VARIATION_POSES.length })}\n\n`);
+
+        // Create promises for parallel execution
+        const tasks = VARIATION_POSES.map(async (pose, index) => {
             try {
+                // Generate
+                const result = await service.generateProductPhoto({
+                    modelDescription: model.description,
+                    modelPhotos: model.photos,
+                    productType,
+                    productImage,
+                    backgroundImage,
+                    background,
+                    pose,
+                    gender,
+                    aspectRatio,
+                    imageSize,
+                    age,
+                    clothing,
+                    sliders,
+                });
+
+                // Upload
+                const filename = `${user.id}/${Date.now()}_var_${Math.random().toString(36).substr(2, 9)}.png`;
                 const imageUrl = await uploadToSupabase(supabase, result.imageData, filename, 'image/png');
 
-                // Save to generations table
-                const { data: stringData, error: dbError } = await supabase
+                // Save DB
+                const { data: dbData } = await supabase
                     .from('generations')
                     .insert([{
                         user_id: user.id,
@@ -248,42 +370,50 @@ router.post("/variations", upload.fields([{ name: 'productImage', maxCount: 1 },
                         filename: filename,
                         product_type: productType,
                         background: background,
-                        pose: result.framing || pose || `Variation ${i + 1}`,
+                        pose: pose,
                         is_variation: true,
-                        variation_index: i,
                         parameters: { aspectRatio, imageSize }
                     }])
                     .select()
                     .single();
 
-                if (dbError) {
-                    console.error(`DB Save Error for variation ${i}:`, dbError);
-                    continue;
-                }
-
-                savedImages.push({
-                    image: imageUrl,
-                    historyEntry: {
-                        id: stringData.id,
-                        filename: filename,
-                        image_url: imageUrl
+                // Stream SUCCESS result immediately
+                const successData = {
+                    type: 'image',
+                    index: index, // To know which one finished
+                    image: {
+                        url: imageUrl,
+                        historyEntry: dbData ? {
+                            id: dbData.id,
+                            filename: filename,
+                            image_url: imageUrl
+                        } : null
                     }
-                });
+                };
+                res.write(`data: ${JSON.stringify(successData)}\n\n`);
 
             } catch (err) {
-                console.error(`Error saving variation ${i}:`, err);
+                console.error(`Variation ${index} failed:`, err);
+                const errorData = {
+                    type: 'error',
+                    index: index,
+                    message: err.message
+                };
+                res.write(`data: ${JSON.stringify(errorData)}\n\n`);
             }
-        }
-
-        res.json({
-            success: true,
-            count: savedImages.length,
-            images: savedImages
         });
 
+        // Wait for all to finish (even if we streamed results already)
+        await Promise.all(tasks);
+
+        // End stream
+        res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+        res.end();
+
     } catch (error) {
-        console.error("Variations generation error:", error);
-        res.status(500).json({ error: error.message || "Variations generation failed" });
+        console.error("Parallel generation stream error:", error);
+        res.write(`data: ${JSON.stringify({ error: error.message || "Parallel generation failed" })}\n\n`);
+        res.end();
     }
 });
 

@@ -1,13 +1,36 @@
 const { GoogleGenAI, Modality } = require("@google/genai");
 const fs = require("fs");
 const path = require("path");
-const { buildProductPrompt, buildModelPreviewPrompt, buildModelAnglePrompt } = require("./promptBuilder");
+const PQueue = require("p-queue");
+const { buildProductPrompt, buildModelPreviewPrompt, buildModelAnglePrompt, buildModelAngleCollagePrompt, buildCollagePrompt } = require("./promptBuilder");
+
+// Global Queue for concurrency control
+// Concurrency: 3 ensures we don't hit 429 errors from Google while allowing some parallelism.
+const generationQueue = new PQueue({ concurrency: 3, timeout: 300000 });
 
 class GeminiService {
     constructor(apiKey) {
         this.ai = new GoogleGenAI({ apiKey });
         // Nano Banana Pro Preview — professional asset production, up to 4K
         this.imageModel = "gemini-3-pro-image-preview";
+        this.queue = generationQueue;
+        console.log(`GeminiService initialized with Queue Concurrency: ${this.queue.concurrency}`);
+    }
+
+    /**
+     * Helper to wrap generation calls in the queue
+     */
+    async enqueueGeneration(taskFn) {
+        return this.queue.add(async () => {
+            try {
+                return await taskFn();
+            } catch (error) {
+                if (error.message && error.message.includes('429')) {
+                    console.warn("Hit rate limit in queue, throwing...");
+                }
+                throw error;
+            }
+        });
     }
 
     /**
@@ -52,7 +75,13 @@ class GeminiService {
      * Generate a preview portrait of the model (no product)
      */
     async generateModelPreview(params) {
-        const { description, gender, referencePhoto } = params;
+        return this.enqueueGeneration(async () => {
+            return this._generateModelPreviewInternal(params);
+        });
+    }
+
+    async _generateModelPreviewInternal(params) {
+        const { description, gender, age, height, referencePhoto } = params;
 
         const contents = [];
 
@@ -70,6 +99,8 @@ class GeminiService {
         const prompt = buildModelPreviewPrompt({
             description,
             gender,
+            age,
+            height,
             hasReferencePhoto: !!referencePhoto,
         });
 
@@ -129,95 +160,82 @@ class GeminiService {
     }
 
     /**
-     * Generate 4 angles of the model (no product)
+     * Generate 2×2 collage of model angles (single image, consistent face)
      */
     async generateModelAngles(params) {
-        const { description, gender, referencePhoto } = params;
+        return this.enqueueGeneration(async () => {
+            return this._generateModelAnglesInternal(params);
+        });
+    }
 
-        const framings = [
-            { label: "chest", prompt: "Chest-level portrait, from chest up, looking at camera" },
-            { label: "waist", prompt: "Waist-up shot, upper body visible, natural pose" },
-            { label: "knee", prompt: "Knee-level shot, three-quarter body visible" },
-            { label: "full", prompt: "Full body shot, head to toe, full length" },
-        ];
+    async _generateModelAnglesInternal(params) {
+        const { description, gender, age, height, referencePhoto } = params;
 
-        const results = [];
-        for (const framing of framings) {
-            const contents = [];
+        const contents = [];
 
-            if (referencePhoto) {
-                contents.push({
-                    inlineData: {
-                        mimeType: "image/jpeg",
-                        data: referencePhoto,
-                    },
-                });
-            }
-
-            // Use cinematographic prompt builder
-            const prompt = buildModelAnglePrompt({
-                description,
-                gender,
-                framingPrompt: framing.prompt,
-                hasReferencePhoto: !!referencePhoto,
+        if (referencePhoto) {
+            contents.push({
+                inlineData: {
+                    mimeType: "image/jpeg",
+                    data: referencePhoto,
+                },
             });
-
-            contents.push({ text: prompt });
-
-            try {
-                const response = await this.ai.models.generateContent({
-                    model: this.imageModel,
-                    contents: [{ role: "user", parts: contents }],
-                    config: {
-                        responseModalities: [Modality.TEXT, Modality.IMAGE],
-                    },
-                });
-
-                // Check if response has the expected structure
-                if (!response.candidates || !response.candidates[0]) {
-                    console.error(`Invalid response structure for angle ${framing.label}:`, JSON.stringify(response, null, 2));
-                    continue;
-                }
-
-                const candidate = response.candidates[0];
-
-                if (candidate.finishReason !== "STOP" && candidate.finishReason !== undefined) {
-                    console.warn(`Gemini angle ${framing.label} stopped with reason:`, candidate.finishReason);
-                    if (candidate.finishReason === "SAFETY") {
-                        console.error(`Angle ${framing.label} blocked by safety`);
-                        continue;
-                    }
-                }
-
-                if (!candidate.content || !candidate.content.parts) {
-                    console.error(`No content/parts for angle ${framing.label}:`, JSON.stringify(candidate, null, 2));
-                    continue;
-                }
-
-                const parts = candidate.content.parts;
-
-                // Ensure parts is iterable (array)
-                if (!Array.isArray(parts)) {
-                    console.error(`Parts is not an array for angle ${framing.label}:`, parts);
-                    continue;
-                }
-
-                for (const part of parts) {
-                    if (part.inlineData) {
-                        results.push({
-                            imageData: Buffer.from(part.inlineData.data, "base64"),
-                            mimeType: part.inlineData.mimeType,
-                            framing: framing.label,
-                        });
-                        break;
-                    }
-                }
-            } catch (error) {
-                console.error(`Error generating angle ${framing.label}:`, error);
-            }
         }
 
-        return results;
+        // Build collage prompt for model angles
+        const prompt = buildModelAngleCollagePrompt({
+            description,
+            gender,
+            age,
+            height,
+            hasReferencePhoto: !!referencePhoto,
+        });
+
+        contents.push({ text: prompt });
+
+        try {
+            const response = await this.ai.models.generateContent({
+                model: this.imageModel,
+                contents: [{ role: "user", parts: contents }],
+                config: {
+                    responseModalities: [Modality.TEXT, Modality.IMAGE],
+                    imageConfig: {
+                        aspectRatio: "1:1",
+                    },
+                },
+            });
+
+            if (!response.candidates || !response.candidates[0]) {
+                throw new Error("Invalid response from Gemini API");
+            }
+
+            const candidate = response.candidates[0];
+            console.log("Model angle collage finishReason:", candidate.finishReason);
+
+            if (candidate.finishReason === "SAFETY") {
+                throw new Error("Image was blocked by safety filters");
+            }
+
+            if (!candidate.content || !candidate.content.parts) {
+                throw new Error("No content in response");
+            }
+
+            const parts = Array.isArray(candidate.content.parts) ? candidate.content.parts : [];
+
+            for (const part of parts) {
+                if (part.inlineData) {
+                    return {
+                        imageData: Buffer.from(part.inlineData.data, "base64"),
+                        mimeType: part.inlineData.mimeType || "image/png",
+                    };
+                }
+            }
+
+            throw new Error("No image in response");
+        } catch (error) {
+            console.error("Model angle collage error:", error);
+            throw error;
+        }
     }
 
     /**
@@ -225,10 +243,16 @@ class GeminiService {
      * Uses ONLY the preview photo (1 face reference) for face consistency
      */
     async generateProductPhoto(params) {
+        return this.enqueueGeneration(async () => {
+            return this._generateProductPhotoInternal(params);
+        });
+    }
+
+    async _generateProductPhotoInternal(params) {
         const {
             modelDescription, modelPhotos, productType, productImage,
             background, backgroundImage, pose, gender,
-            aspectRatio, imageSize
+            aspectRatio, imageSize, age, clothing, sliders
         } = params;
 
         const contents = [];
@@ -270,6 +294,9 @@ class GeminiService {
         const prompt = buildProductPrompt({
             modelDescription,
             gender,
+            age,
+            clothing,
+            sliders,
             productType,
             background,
             pose,
@@ -346,34 +373,119 @@ class GeminiService {
     }
 
     /**
-     * Generate multiple variations
+     * Generate 2×2 collage (single image, consistent face)
      */
-    async generateVariations(baseParams, count = 10) {
-        const poses = [
-            "front facing view, looking at camera, confident expression",
-            "three-quarter angle, natural stance, slight smile",
-            "side profile, elegant pose, chin slightly raised",
-            "slightly turned, confident expression, hands on hips",
-            "dynamic movement pose, walking naturally",
-            "relaxed casual stance, leaning slightly",
-            "professional studio pose, straight posture",
-            "lifestyle moment, candid feel, looking away then glancing at camera",
-            "close-up detail shot, product focus with face visible",
-            "full body wide shot, product fully visible head to toe"
-        ];
+    async generateCollage(params) {
+        return this.enqueueGeneration(async () => {
+            return this._generateCollageInternal(params);
+        });
+    }
 
-        const variations = [];
-        for (let i = 0; i < Math.min(count, poses.length); i++) {
-            const params = { ...baseParams, pose: poses[i] };
-            try {
-                const result = await this.generateProductPhoto(params);
-                variations.push(result);
-            } catch (error) {
-                console.error(`Error generating variation ${i + 1}:`, error);
+    async _generateCollageInternal(params) {
+        const {
+            modelDescription, modelPhotos, productType, productImage,
+            background, backgroundImage, gender,
+            aspectRatio, imageSize, age, clothing, sliders
+        } = params;
+
+        const contents = [];
+
+        // Add model preview photo for face reference
+        if (modelPhotos && modelPhotos.length > 0) {
+            const previewPhoto = modelPhotos.find(p => p.type === "preview") || modelPhotos[0];
+            if (previewPhoto && previewPhoto.image) {
+                contents.push({
+                    inlineData: {
+                        mimeType: "image/jpeg",
+                        data: previewPhoto.image,
+                    },
+                });
             }
         }
 
-        return variations;
+        // Add Product Image
+        if (productImage) {
+            contents.push({
+                inlineData: {
+                    mimeType: "image/jpeg",
+                    data: productImage.toString("base64"),
+                },
+            });
+        }
+
+        // Add Background Reference Image
+        if (backgroundImage) {
+            contents.push({
+                inlineData: {
+                    mimeType: "image/jpeg",
+                    data: backgroundImage.toString("base64"),
+                },
+            });
+        }
+
+        // Build collage prompt
+        const prompt = buildCollagePrompt({
+            modelDescription,
+            gender,
+            age,
+            clothing,
+            sliders,
+            productType,
+            background,
+            hasProductImage: !!productImage,
+            hasBackgroundImage: !!backgroundImage,
+            hasModelPhotos: !!(modelPhotos && modelPhotos.length > 0),
+        });
+
+        contents.push({ text: prompt });
+
+        // Use 1:1 aspect ratio for 2×2 grid  
+        const config = {
+            responseModalities: [Modality.TEXT, Modality.IMAGE],
+            imageConfig: {
+                aspectRatio: "1:1",
+            },
+        };
+        if (imageSize) config.imageConfig.imageSize = imageSize;
+
+        try {
+            const response = await this.ai.models.generateContent({
+                model: this.imageModel,
+                contents: [{ role: "user", parts: contents }],
+                config,
+            });
+
+            if (!response.candidates || !response.candidates[0]) {
+                throw new Error("Invalid response from Gemini API");
+            }
+
+            const candidate = response.candidates[0];
+            console.log("Collage generation finishReason:", candidate.finishReason);
+
+            if (candidate.finishReason === "SAFETY") {
+                throw new Error("Image was blocked by safety filters");
+            }
+
+            if (!candidate.content || !candidate.content.parts) {
+                throw new Error("No content in response");
+            }
+
+            const parts = Array.isArray(candidate.content.parts) ? candidate.content.parts : [];
+
+            for (const part of parts) {
+                if (part.inlineData) {
+                    return {
+                        imageData: Buffer.from(part.inlineData.data, "base64"),
+                        mimeType: part.inlineData.mimeType || "image/png",
+                    };
+                }
+            }
+
+            throw new Error("No image in response");
+        } catch (error) {
+            console.error("Collage generation error:", error);
+            throw error;
+        }
     }
 }
 

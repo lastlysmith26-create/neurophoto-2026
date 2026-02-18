@@ -1,19 +1,26 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Camera, Users, Image as ImageIcon, Box, Sparkles } from 'lucide-react';
+import { Camera, Users, Image as ImageIcon, Box, Sparkles, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAuth } from '../contexts/AuthContext';
 
 const Sidebar = () => {
     const navigate = useNavigate();
     const location = useLocation();
+    const { signOut, user } = useAuth();
 
     const menuItems = [
-        { icon: Users, label: 'Нейромодели', path: '/models' },
-        { icon: Camera, label: 'Фотосессия', path: '/' },
-        { icon: ImageIcon, label: 'Галерея', path: '/gallery' },
+        { icon: Users, label: 'Мои модели', path: '/', description: 'Управление моделями' },
+        { icon: Camera, label: 'Фотосессия', path: '/generate', description: 'Генерация фото', accent: true },
+        { icon: ImageIcon, label: 'Галерея', path: '/gallery', description: 'История фото' },
     ];
 
+    const handleLogout = async () => {
+        await signOut();
+        navigate('/login');
+    };
+
     return (
-        <div className="w-64 h-screen p-4 flex flex-col relative z-20"
+        <div className="w-64 h-screen p-4 flex flex-col relative z-20 shrink-0"
             style={{
                 background: 'hsla(220, 15%, 6%, 0.75)',
                 backdropFilter: 'blur(24px)',
@@ -54,6 +61,10 @@ const Sidebar = () => {
                                 color: 'hsl(175, 85%, 60%)',
                                 border: '1px solid hsla(175, 85%, 50%, 0.25)',
                                 boxShadow: '0 0 20px -5px hsla(175, 85%, 50%, 0.15)',
+                            } : item.accent ? {
+                                background: 'hsla(265, 60%, 50%, 0.06)',
+                                color: 'hsl(265, 70%, 75%)',
+                                border: '1px solid hsla(265, 60%, 50%, 0.15)',
                             } : {
                                 background: 'transparent',
                                 color: 'hsl(220, 10%, 55%)',
@@ -61,7 +72,10 @@ const Sidebar = () => {
                             }}
                         >
                             <item.icon size={20} />
-                            <span className="font-medium">{item.label}</span>
+                            <div className="text-left">
+                                <span className="font-medium block leading-tight">{item.label}</span>
+                                <span className="text-[10px] opacity-60 block leading-tight">{item.description}</span>
+                            </div>
                         </motion.button>
                     );
                 })}
@@ -69,7 +83,7 @@ const Sidebar = () => {
 
             {/* Pro Tips */}
             <div
-                className="p-4 rounded-xl"
+                className="p-4 rounded-xl mb-3"
                 style={{
                     background: 'linear-gradient(135deg, hsla(175, 85%, 50%, 0.06), hsla(265, 80%, 55%, 0.06))',
                     border: '1px solid hsla(175, 85%, 50%, 0.12)',
@@ -82,6 +96,24 @@ const Sidebar = () => {
                 <p className="text-xs leading-relaxed" style={{ color: 'hsl(220, 10%, 55%)' }}>
                     Используйте качественные фото товаров на прозрачном фоне для лучших результатов.
                 </p>
+            </div>
+
+            {/* User Footer */}
+            <div className="pt-3 flex items-center justify-between"
+                style={{ borderTop: '1px solid hsla(175, 40%, 30%, 0.08)' }}>
+                <div className="truncate">
+                    <p className="text-xs font-medium truncate" style={{ color: 'hsl(210, 40%, 80%)' }}>
+                        {user?.email?.split('@')[0] || 'Пользователь'}
+                    </p>
+                    <p className="text-[10px] truncate" style={{ color: 'hsl(220, 10%, 45%)' }}>
+                        {user?.email || ''}
+                    </p>
+                </div>
+                <button onClick={handleLogout} title="Выйти"
+                    className="p-2 rounded-lg transition-colors"
+                    style={{ color: 'hsl(220, 10%, 45%)' }}>
+                    <LogOut size={16} />
+                </button>
             </div>
         </div>
     );

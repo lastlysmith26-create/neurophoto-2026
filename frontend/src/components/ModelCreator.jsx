@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, User, Sparkles, Check, Trash2, Plus, Edit2, Image as ImageIcon, RefreshCw, Save, ArrowLeft } from 'lucide-react';
+import { Upload, User, Sparkles, Check, Trash2, Plus, Edit2, Image as ImageIcon, RefreshCw, Save, ArrowLeft, AlertTriangle, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { modelsApi, generateApi } from '../api/client';
 
 const GENERATION_TIME_ESTIMATE = 33; // seconds
-const ANGLES_TIME_ESTIMATE = 130; // ~2 min for 4 angles
+const ANGLES_TIME_ESTIMATE = 40; // ~40s for single collage
 
 const PhotoSlot = ({ label, image, onChange, onRemove }) => {
     return (
@@ -90,26 +90,119 @@ const ProgressTimer = ({ isActive, estimatedSeconds, label }) => {
     );
 };
 
+// Toast notification component
+const Toast = ({ message, type = 'success', onClose }) => {
+    useEffect(() => {
+        const timer = setTimeout(onClose, 3000);
+        return () => clearTimeout(timer);
+    }, [onClose]);
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-4 right-4 z-50 flex items-center gap-2 px-5 py-3 rounded-xl shadow-2xl text-sm font-medium"
+            style={{
+                background: type === 'success' ? 'hsla(175, 85%, 30%, 0.95)' : 'hsla(0, 65%, 40%, 0.95)',
+                color: 'white',
+                backdropFilter: 'blur(12px)',
+                border: `1px solid ${type === 'success' ? 'hsla(175, 85%, 50%, 0.3)' : 'hsla(0, 65%, 50%, 0.3)'}`,
+            }}
+        >
+            {type === 'success' ? <Check size={16} /> : <AlertTriangle size={16} />}
+            {message}
+        </motion.div>
+    );
+};
+
+// Delete confirmation modal
+const DeleteConfirm = ({ modelName, onConfirm, onCancel }) => (
+    <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center"
+        style={{ background: 'hsla(220, 15%, 3%, 0.8)', backdropFilter: 'blur(8px)' }}
+        onClick={onCancel}
+    >
+        <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="glass-card-strong p-6 rounded-2xl max-w-sm w-full mx-4 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+        >
+            <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'hsla(0, 65%, 50%, 0.15)' }}>
+                    <AlertTriangle size={20} style={{ color: 'hsl(0, 70%, 65%)' }} />
+                </div>
+                <div>
+                    <h3 className="font-bold text-white">Удалить модель?</h3>
+                    <p className="text-sm" style={{ color: 'hsl(220, 10%, 55%)' }}>«{modelName}»</p>
+                </div>
+            </div>
+            <p className="text-sm" style={{ color: 'hsl(220, 10%, 55%)' }}>
+                Это действие нельзя отменить. Модель и все её фото будут удалены навсегда.
+            </p>
+            <div className="flex gap-3">
+                <button onClick={onCancel}
+                    className="flex-1 py-2.5 rounded-xl font-medium transition-all"
+                    style={{ background: 'hsla(220, 15%, 14%, 0.6)', color: 'hsl(220, 10%, 70%)', border: '1px solid hsla(175, 40%, 30%, 0.1)' }}>
+                    Отмена
+                </button>
+                <button onClick={onConfirm}
+                    className="flex-1 py-2.5 rounded-xl font-bold transition-all"
+                    style={{ background: 'hsla(0, 65%, 50%, 0.8)', color: 'white' }}>
+                    Удалить
+                </button>
+            </div>
+        </motion.div>
+    </motion.div>
+);
+
+// Loading skeleton for model cards
+const ModelSkeleton = () => (
+    <div className="glass-card rounded-2xl overflow-hidden animate-pulse">
+        <div className="aspect-[3/4]" style={{ background: 'hsla(220, 20%, 12%, 0.6)' }} />
+        <div className="p-4 space-y-3">
+            <div className="h-5 rounded-lg w-2/3" style={{ background: 'hsla(220, 20%, 15%, 0.6)' }} />
+            <div className="h-4 rounded-lg w-full" style={{ background: 'hsla(220, 20%, 13%, 0.4)' }} />
+            <div className="h-4 rounded-lg w-1/2" style={{ background: 'hsla(220, 20%, 13%, 0.4)' }} />
+        </div>
+    </div>
+);
+
 const ModelCreator = () => {
-    const [activeTab, setActiveTab] = useState('create');
+    const [activeTab, setActiveTab] = useState('view');
     const [models, setModels] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [modelsLoading, setModelsLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
     const [generatingPreview, setGeneratingPreview] = useState(false);
     const [generatingAngles, setGeneratingAngles] = useState(false);
     const [previewImage, setPreviewImage] = useState(null);
     const [angleImages, setAngleImages] = useState([]); // 4 angles
     const [editingModelId, setEditingModelId] = useState(null);
+    const [toast, setToast] = useState(null);
+    const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, name }
 
-    const [formData, setFormData] = useState({ name: '', gender: 'female', description: '' });
+    const [formData, setFormData] = useState({ name: '', gender: 'female', description: '', age: '', height: '' });
     const [photos, setPhotos] = useState({});
 
     useEffect(() => { loadModels(); }, []);
 
     const loadModels = async () => {
+        setModelsLoading(true);
         try {
             const response = await modelsApi.getAll();
             setModels(response.data);
-        } catch (error) { console.error('Error loading models:', error); }
+        } catch (error) {
+            console.error('Error loading models:', error);
+            setToast({ message: 'Ошибка загрузки моделей', type: 'error' });
+        } finally {
+            setModelsLoading(false);
+        }
     };
 
     const handlePhotoUpload = (e, type) => {
@@ -133,6 +226,8 @@ const ModelCreator = () => {
             name: model.name,
             gender: model.gender,
             description: model.description,
+            age: model.age || '',
+            height: model.height || '',
         });
         const previewPhoto = model.photos?.find(p => p.type === 'preview');
         if (previewPhoto) setPreviewImage(`data:image/jpeg;base64,${previewPhoto.image}`);
@@ -156,12 +251,18 @@ const ModelCreator = () => {
         try {
             const fd = new FormData();
             fd.append('description', formData.description);
+            fd.append('description', formData.description);
             fd.append('gender', formData.gender);
+            if (formData.age) fd.append('age', formData.age);
+            if (formData.height) fd.append('height', formData.height);
             const firstPhoto = photos.ref_1 || photos.ref_2;
             if (firstPhoto?.file) fd.append('referencePhoto', firstPhoto.file);
             const response = await generateApi.generatePreview(fd);
             setPreviewImage(`data:${response.data.mimeType};base64,${response.data.image}`);
-        } catch (error) { console.error('Error:', error); alert('Ошибка генерации превью'); }
+        } catch (error) {
+            console.error('Error:', error);
+            setToast({ message: 'Ошибка генерации превью', type: 'error' });
+        }
         finally { setGeneratingPreview(false); }
     };
 
@@ -171,18 +272,39 @@ const ModelCreator = () => {
             const fd = new FormData();
             fd.append('description', formData.description);
             fd.append('gender', formData.gender);
-            const firstPhoto = photos.ref_1 || photos.ref_2;
-            if (firstPhoto?.file) fd.append('referencePhoto', firstPhoto.file);
+            if (formData.age) fd.append('age', formData.age);
+            if (formData.height) fd.append('height', formData.height);
+
+            // Phase 8: Use generated preview as single source of truth
+            let usedPreview = false;
+            if (previewImage) {
+                try {
+                    const res = await fetch(previewImage);
+                    const blob = await res.blob();
+                    fd.append('referencePhoto', blob, 'preview.jpg');
+                    usedPreview = true;
+                } catch (e) {
+                    console.error("Error using preview image:", e);
+                }
+            }
+
+            if (!usedPreview) {
+                const firstPhoto = photos.ref_1 || photos.ref_2;
+                if (firstPhoto?.file) fd.append('referencePhoto', firstPhoto.file);
+            }
             const response = await generateApi.generateAngles(fd);
             const images = response.data.images.map(img => `data:${img.mimeType};base64,${img.image}`);
             setAngleImages(images);
-        } catch (error) { console.error('Error:', error); alert('Ошибка генерации ракурсов'); }
+        } catch (error) {
+            console.error('Error:', error);
+            setToast({ message: 'Ошибка генерации ракурсов', type: 'error' });
+        }
         finally { setGeneratingAngles(false); }
     };
 
     const handleSaveModel = async () => {
         if (!previewImage) return;
-        setLoading(true);
+        setSaving(true);
         try {
             const photosArray = [];
             Object.entries(photos).forEach(([type, data]) => {
@@ -195,21 +317,54 @@ const ModelCreator = () => {
             if (editingModelId) await modelsApi.update(editingModelId, payload);
             else await modelsApi.create(payload);
 
+            setToast({ message: editingModelId ? 'Модель обновлена ✓' : 'Модель сохранена ✓', type: 'success' });
             resetForm(); loadModels(); setActiveTab('view');
-        } catch (error) { console.error('Error:', error); alert('Ошибка сохранения'); }
-        finally { setLoading(false); }
+        } catch (error) {
+            console.error('Error:', error);
+            setToast({ message: 'Ошибка сохранения модели', type: 'error' });
+        }
+        finally { setSaving(false); }
     };
 
-    const handleDeleteModel = async (id, e) => {
+    const handleDeleteModel = async (id, name, e) => {
         e?.stopPropagation();
-        try { await modelsApi.delete(id); await loadModels(); }
-        catch (error) { console.error('Error:', error); alert('Ошибка удаления'); }
+        setDeleteConfirm({ id, name });
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteConfirm) return;
+        const { id } = deleteConfirm;
+        setDeleteConfirm(null);
+        try {
+            await modelsApi.delete(id);
+            setToast({ message: 'Модель удалена', type: 'success' });
+            await loadModels();
+        } catch (error) {
+            console.error('Error:', error);
+            setToast({ message: 'Ошибка удаления модели', type: 'error' });
+        }
     };
 
     const canGenerate = formData.name && formData.description;
 
     return (
         <div className="max-w-6xl mx-auto space-y-8">
+            {/* Toast Notification */}
+            <AnimatePresence>
+                {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            </AnimatePresence>
+
+            {/* Delete Confirmation Modal */}
+            <AnimatePresence>
+                {deleteConfirm && (
+                    <DeleteConfirm
+                        modelName={deleteConfirm.name}
+                        onConfirm={confirmDelete}
+                        onCancel={() => setDeleteConfirm(null)}
+                    />
+                )}
+            </AnimatePresence>
+
             {/* Header & Tabs */}
             <div className="flex items-center justify-between">
                 <div>
@@ -217,19 +372,16 @@ const ModelCreator = () => {
                     <p className="mt-2 text-lg" style={{ color: 'hsl(220, 10%, 55%)' }}>Управление виртуальными моделями</p>
                 </div>
 
-                <div className="p-1 rounded-xl flex gap-1" style={{ background: 'hsla(220, 20%, 8%, 0.5)', border: '1px solid hsla(175, 40%, 30%, 0.1)' }}>
-                    {['create', 'view'].map((tab) => (
+                <div className="flex items-center gap-4">
+                    {activeTab === 'create' && (
                         <button
-                            key={tab}
-                            onClick={() => { if (tab === 'create' && activeTab !== 'create') resetForm(); setActiveTab(tab); }}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab
-                                ? 'bg-primary text-white shadow-lg shadow-primary/20'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
-                                }`}
+                            onClick={() => { resetForm(); setActiveTab('view'); }}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-white/5 hover:bg-white/10 text-white/70 hover:text-white"
                         >
-                            {tab === 'create' ? (editingModelId ? 'Редактирование' : 'Создать') : 'Мои модели'}
+                            <ArrowLeft size={16} />
+                            Назад к списку
                         </button>
-                    ))}
+                    )}
                 </div>
             </div>
 
@@ -277,9 +429,19 @@ const ModelCreator = () => {
                                     <label className="text-sm font-medium" style={{ color: 'hsl(220, 10%, 55%)' }}>Описание внешности</label>
                                     <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                         placeholder="Светлые длинные волосы, голубые глаза..." rows={4} className="glass-input w-full p-3 resize-none" />
-                                    <p className="text-[11px] leading-relaxed" style={{ color: 'hsl(220, 10%, 45%)' }}>
-                                        💡 Рекомендуем указать <span className="text-primary/70 font-medium">рост</span> и <span className="text-primary/70 font-medium">параметры</span>.
-                                    </p>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium" style={{ color: 'hsl(220, 10%, 55%)' }}>Возраст (лет)</label>
+                                        <input type="number" min="18" max="100" value={formData.age} onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                                            placeholder="25" className="glass-input w-full p-3" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium" style={{ color: 'hsl(220, 10%, 55%)' }}>Рост (см)</label>
+                                        <input type="text" value={formData.height} onChange={(e) => setFormData({ ...formData, height: e.target.value })}
+                                            placeholder="175" className="glass-input w-full p-3" />
+                                    </div>
                                 </div>
                             </div>
 
@@ -294,7 +456,7 @@ const ModelCreator = () => {
 
                             <div className="space-y-3">
                                 <ProgressTimer isActive={generatingPreview} estimatedSeconds={GENERATION_TIME_ESTIMATE} label="Генерация превью..." />
-                                <ProgressTimer isActive={generatingAngles} estimatedSeconds={ANGLES_TIME_ESTIMATE} label="Генерация 4 ракурсов (~2 мин)..." />
+                                <ProgressTimer isActive={generatingAngles} estimatedSeconds={ANGLES_TIME_ESTIMATE} label="Генерация коллажа ракурсов (~40 сек)..." />
 
                                 {!previewImage && !generatingPreview && (
                                     <button onClick={handleGeneratePreview} disabled={!canGenerate || generatingPreview}
@@ -309,10 +471,19 @@ const ModelCreator = () => {
                                             className="flex-1 py-3 rounded-xl font-medium border border-border/20 text-muted-foreground hover:text-white hover:bg-white/5 transition-all flex items-center justify-center gap-2">
                                             <RefreshCw size={16} /> Перегенерировать
                                         </button>
-                                        <button onClick={handleSaveModel} disabled={loading}
+                                        <button onClick={handleSaveModel} disabled={saving}
                                             className="glow-btn-secondary glow-btn flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2">
-                                            {loading ? <div className="w-5 h-5 rounded-full animate-spin border-2 border-white/30 border-t-white" /> : <Save size={16} />}
-                                            Сохранить
+                                            {saving ? (
+                                                <>
+                                                    <Loader2 size={16} className="animate-spin" />
+                                                    Сохранение...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Save size={16} />
+                                                    Сохранить
+                                                </>
+                                            )}
                                         </button>
                                     </div>
                                 )}
@@ -320,7 +491,7 @@ const ModelCreator = () => {
                                 {previewImage && !generatingAngles && angleImages.length === 0 && (
                                     <button onClick={handleGenerateAngles}
                                         className="w-full py-3 rounded-xl font-medium border border-primary/50 text-primary hover:bg-primary/10 transition-all flex items-center justify-center gap-2">
-                                        <ImageIcon size={16} /> Показать 4 ракурса модели
+                                        <ImageIcon size={16} /> Показать коллаж ракурсов
                                     </button>
                                 )}
                             </div>
@@ -359,26 +530,24 @@ const ModelCreator = () => {
                                 <div className="glass-card overflow-hidden">
                                     <div className="p-6 pb-4">
                                         <h3 className="font-semibold flex items-center gap-2 text-white">
-                                            <ImageIcon size={18} className="text-primary" /> 4 ракурса модели
+                                            <ImageIcon size={18} className="text-primary" /> Коллаж ракурсов модели
                                         </h3>
                                     </div>
                                     <div className="px-6 pb-6">
-                                        <div className="grid grid-cols-2 gap-3">
-                                            {generatingAngles
-                                                ? ['По грудь', 'По пояс', 'По колено', 'В полный рост'].map((label, i) => (
-                                                    <div key={i} className="aspect-[3/4] rounded-xl flex flex-col items-center justify-center animate-pulse"
-                                                        style={{ background: 'hsla(220, 20%, 8%, 0.4)', border: '1px solid hsla(175, 40%, 30%, 0.1)' }}>
-                                                        <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin mb-2" />
-                                                        <span className="text-xs text-muted-foreground">{label}</span>
-                                                    </div>
-                                                ))
-                                                : angleImages.map((img, i) => (
-                                                    <div key={i} className="aspect-[3/4] rounded-xl overflow-hidden shadow-md"
-                                                        style={{ border: '1px solid hsla(175, 40%, 30%, 0.2)' }}>
-                                                        <img src={img} alt={`Ракурс ${i + 1}`} className="w-full h-full object-cover" />
-                                                    </div>
-                                                ))}
-                                        </div>
+                                        {generatingAngles
+                                            ? (
+                                                <div className="aspect-square rounded-xl flex flex-col items-center justify-center animate-pulse"
+                                                    style={{ background: 'hsla(220, 20%, 8%, 0.4)', border: '1px solid hsla(175, 40%, 30%, 0.1)' }}>
+                                                    <div className="w-10 h-10 border-2 border-primary/30 border-t-primary rounded-full animate-spin mb-3" />
+                                                    <span className="text-sm text-muted-foreground">Генерируем коллаж 2×2...</span>
+                                                </div>
+                                            )
+                                            : angleImages.map((img, i) => (
+                                                <div key={i} className="aspect-square rounded-xl overflow-hidden shadow-md"
+                                                    style={{ border: '1px solid hsla(175, 40%, 30%, 0.2)' }}>
+                                                    <img src={img} alt="Коллаж ракурсов" className="w-full h-full object-cover" />
+                                                </div>
+                                            ))}
                                     </div>
                                 </div>
                             )}
@@ -386,7 +555,14 @@ const ModelCreator = () => {
                     </motion.div>
                 ) : (
                     <motion.div key="view" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-                        {models.length === 0 ? (
+                        {modelsLoading ? (
+                            /* Loading skeleton while models are being fetched */
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                <ModelSkeleton />
+                                <ModelSkeleton />
+                                <ModelSkeleton />
+                            </div>
+                        ) : models.length === 0 ? (
                             <div className="text-center py-20 flex flex-col items-center" style={{ color: 'hsl(220, 10%, 50%)' }}>
                                 <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6" style={{ background: 'hsla(220, 20%, 8%, 0.5)' }}>
                                     <User size={48} className="opacity-50" />
@@ -420,7 +596,7 @@ const ModelCreator = () => {
                                                     className="p-3 bg-white/10 backdrop-blur rounded-xl text-white hover:bg-white/20 transition-all translate-y-4 group-hover:translate-y-0 duration-300">
                                                     <Edit2 size={20} />
                                                 </button>
-                                                <button onClick={(e) => handleDeleteModel(model.id, e)}
+                                                <button onClick={(e) => handleDeleteModel(model.id, model.name, e)}
                                                     className="p-3 bg-red-500/20 backdrop-blur rounded-xl text-red-200 hover:bg-red-500/40 transition-all translate-y-4 group-hover:translate-y-0 duration-300 delay-75">
                                                     <Trash2 size={20} />
                                                 </button>

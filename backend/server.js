@@ -1,7 +1,10 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+
 const fs = require("fs");
+const helmet = require("helmet");
+const compression = require("compression");
 require("dotenv").config();
 
 const modelsRoutes = require("./routes/models");
@@ -27,6 +30,10 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow serving images
+}));
+app.use(compression());
 
 // Static files for generated images
 app.use("/images", express.static(path.join(__dirname, "storage/images")));

@@ -22,8 +22,8 @@ function App() {
                   <Sidebar />
                   <Layout>
                     <Routes>
-                      <Route path="/" element={<PhotoSession />} />
-                      <Route path="/models" element={<ModelCreator />} />
+                      <Route path="/" element={<ModelCreator />} />
+                      <Route path="/generate" element={<PhotoSession />} />
                       <Route path="/gallery" element={<Gallery />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>

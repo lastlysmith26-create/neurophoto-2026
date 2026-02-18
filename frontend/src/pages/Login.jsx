@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Sparkles, Mail, Lock, Loader2, ArrowRight } from 'lucide-react';
+import { Sparkles, Mail, Lock, Loader2, ArrowRight, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const Login = () => {
@@ -10,13 +10,34 @@ const Login = () => {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [rateLimitCountdown, setRateLimitCountdown] = useState(0);
+    const [successMsg, setSuccessMsg] = useState(null);
     const { signIn, signUp } = useAuth();
     const navigate = useNavigate();
 
+    // Rate limit countdown timer
+    useEffect(() => {
+        if (rateLimitCountdown <= 0) return;
+        const timer = setInterval(() => {
+            setRateLimitCountdown(prev => {
+                if (prev <= 1) { setError(null); return 0; }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [rateLimitCountdown]);
+
+    const isRateLimitError = (err) => {
+        const msg = (err.message || err.toString()).toLowerCase();
+        return msg.includes('rate') || msg.includes('limit') || msg.includes('too many') || msg.includes('429') || msg.includes('email rate');
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (rateLimitCountdown > 0) return;
         setLoading(true);
         setError(null);
+        setSuccessMsg(null);
 
         try {
             const { error } = isLogin
@@ -26,11 +47,18 @@ const Login = () => {
             if (error) throw error;
             if (isLogin) navigate('/');
             else {
-                alert('Проверьте почту для подтверждения регистрации!');
+                setSuccessMsg('Проверьте почту для подтверждения регистрации!');
                 setIsLogin(true);
             }
         } catch (err) {
-            setError(err.message);
+            if (isRateLimitError(err)) {
+                setError('Слишком много попыток. Подождите перед повторной отправкой.');
+                setRateLimitCountdown(60);
+            } else {
+                setError(err.message === 'Invalid login credentials'
+                    ? 'Неверный email или пароль'
+                    : err.message);
+            }
         } finally {
             setLoading(false);
         }
@@ -93,19 +121,33 @@ const Login = () => {
                             </div>
                         </div>
 
+                        {successMsg && (
+                            <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-200 text-sm text-center">
+                                {successMsg}
+                            </div>
+                        )}
+
                         {error && (
                             <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-200 text-sm text-center">
-                                {error}
+                                <p>{error}</p>
+                                {rateLimitCountdown > 0 && (
+                                    <p className="mt-2 flex items-center justify-center gap-1.5 font-mono text-red-300">
+                                        <Clock className="w-4 h-4" />
+                                        {Math.floor(rateLimitCountdown / 60)}:{String(rateLimitCountdown % 60).padStart(2, '0')}
+                                    </p>
+                                )}
                             </div>
                         )}
 
                         <button
                             type="submit"
-                            disabled={loading}
-                            className="w-full bg-gradient-to-r from-primary to-accent text-white font-bold py-3.5 rounded-xl shadow-lg shadow-primary/25 hover:shadow-primary/40 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
+                            disabled={loading || rateLimitCountdown > 0}
+                            className={`w-full bg-gradient-to-r from-primary to-accent text-white font-bold py-3.5 rounded-xl shadow-lg shadow-primary/25 hover:shadow-primary/40 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group ${rateLimitCountdown > 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                             {loading ? (
                                 <Loader2 className="w-5 h-5 animate-spin" />
+                            ) : rateLimitCountdown > 0 ? (
+                                <span>Подождите {rateLimitCountdown} сек.</span>
                             ) : (
                                 <>
                                     {isLogin ? 'Войти' : 'Создать аккаунт'}

@@ -181,6 +181,46 @@ body {
 }
 
 /* ============================================ */
+/* Range Slider System                           */
+/* ============================================ */
+.slider-input {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: hsla(220, 15%, 14%, 0.8);
+  outline: none;
+  cursor: pointer;
+}
+
+.slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, hsl(265, 80%, 60%), hsl(265, 70%, 50%));
+  border: 2px solid hsla(265, 80%, 70%, 0.4);
+  box-shadow: 0 0 10px -2px hsla(265, 80%, 60%, 0.4);
+  cursor: pointer;
+  transition: box-shadow 0.2s ease;
+}
+
+.slider-input::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 16px -2px hsla(265, 80%, 60%, 0.6);
+}
+
+.slider-input::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, hsl(265, 80%, 60%), hsl(265, 70%, 50%));
+  border: 2px solid hsla(265, 80%, 70%, 0.4);
+  box-shadow: 0 0 10px -2px hsla(265, 80%, 60%, 0.4);
+  cursor: pointer;
+}
+
+/* ============================================ */
 /* Pill Selector System                          */
 /* ============================================ */
 .pill-btn {
@@ -216,39 +256,85 @@ body {
 /* Animations                                    */
 /* ============================================ */
 @keyframes float {
-  0% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-  100% { transform: translateY(0px); }
+  0% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+
+  100% {
+    transform: translateY(0px);
+  }
 }
 
 @keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 20px -5px hsla(175 85% 50% / 0.15); }
-  50% { box-shadow: 0 0 30px -3px hsla(175 85% 50% / 0.3); }
+
+  0%,
+  100% {
+    box-shadow: 0 0 20px -5px hsla(175 85% 50% / 0.15);
+  }
+
+  50% {
+    box-shadow: 0 0 30px -3px hsla(175 85% 50% / 0.3);
+  }
 }
 
 @keyframes shimmer {
-  0% { background-position: -200% center; }
-  100% { background-position: 200% center; }
+  0% {
+    background-position: -200% center;
+  }
+
+  100% {
+    background-position: 200% center;
+  }
 }
 
 @keyframes border-glow {
-  0%, 100% { border-color: hsla(175 85% 50% / 0.1); }
-  50% { border-color: hsla(175 85% 50% / 0.3); }
+
+  0%,
+  100% {
+    border-color: hsla(175 85% 50% / 0.1);
+  }
+
+  50% {
+    border-color: hsla(175 85% 50% / 0.3);
+  }
 }
 
 @keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.animate-float { animation: float 3s ease-in-out infinite; }
-.animate-glow-pulse { animation: glow-pulse 3s ease-in-out infinite; }
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
 .animate-shimmer {
   background-size: 200% auto;
   animation: shimmer 3s linear infinite;
 }
-.animate-border-glow { animation: border-glow 3s ease-in-out infinite; }
-.animate-fade-in-up { animation: fade-in-up 0.5s ease-out forwards; }
+
+.animate-border-glow {
+  animation: border-glow 3s ease-in-out infinite;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s ease-out forwards;
+}
 
 /* ============================================ */
 /* Custom Scrollbar                              */

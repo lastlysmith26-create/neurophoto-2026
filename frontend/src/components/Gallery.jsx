@@ -1,7 +1,76 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { historyApi } from '../api/client';
-import { Trash2, Download, ZoomIn, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trash2, Download, ZoomIn, X, ChevronLeft, ChevronRight, ImageIcon, AlertTriangle, Check } from 'lucide-react';
+import { Image as LucideImage } from 'lucide-react';
+
+// Toast notification
+const Toast = ({ message, type = 'success', onClose }) => {
+    useEffect(() => {
+        const timer = setTimeout(onClose, 3000);
+        return () => clearTimeout(timer);
+    }, [onClose]);
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-4 right-4 z-50 flex items-center gap-2 px-5 py-3 rounded-xl shadow-2xl text-sm font-medium"
+            style={{
+                background: type === 'success' ? 'hsla(175, 85%, 30%, 0.95)' : 'hsla(0, 65%, 40%, 0.95)',
+                color: 'white',
+                backdropFilter: 'blur(12px)',
+                border: `1px solid ${type === 'success' ? 'hsla(175, 85%, 50%, 0.3)' : 'hsla(0, 65%, 50%, 0.3)'}`,
+            }}
+        >
+            {type === 'success' ? <Check size={16} /> : <AlertTriangle size={16} />}
+            {message}
+        </motion.div>
+    );
+};
+
+// Delete confirmation modal
+const DeleteConfirm = ({ onConfirm, onCancel }) => (
+    <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center"
+        style={{ background: 'hsla(220, 15%, 3%, 0.8)', backdropFilter: 'blur(8px)' }}
+        onClick={onCancel}
+    >
+        <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="glass-card-strong p-6 rounded-2xl max-w-sm w-full mx-4 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+        >
+            <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'hsla(0, 65%, 50%, 0.15)' }}>
+                    <AlertTriangle size={20} style={{ color: 'hsl(0, 70%, 65%)' }} />
+                </div>
+                <div>
+                    <h3 className="font-bold text-white">Удалить фото?</h3>
+                    <p className="text-sm" style={{ color: 'hsl(220, 10%, 55%)' }}>Это действие нельзя отменить</p>
+                </div>
+            </div>
+            <div className="flex gap-3">
+                <button onClick={onCancel}
+                    className="flex-1 py-2.5 rounded-xl font-medium transition-all"
+                    style={{ background: 'hsla(220, 15%, 14%, 0.6)', color: 'hsl(220, 10%, 70%)', border: '1px solid hsla(175, 40%, 30%, 0.1)' }}>
+                    Отмена
+                </button>
+                <button onClick={onConfirm}
+                    className="flex-1 py-2.5 rounded-xl font-bold transition-all"
+                    style={{ background: 'hsla(0, 65%, 50%, 0.8)', color: 'white' }}>
+                    Удалить
+                </button>
+            </div>
+        </motion.div>
+    </motion.div>
+);
 
 // Fullscreen Image Viewer Modal
 const FullscreenViewer = ({ images, currentIndex, onClose, onDownload }) => {
@@ -106,6 +175,8 @@ const Gallery = () => {
     const [images, setImages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [fullscreenIndex, setFullscreenIndex] = useState(null);
+    const [toast, setToast] = useState(null);
+    const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
     useEffect(() => {
         loadHistory();
@@ -117,20 +188,28 @@ const Gallery = () => {
             setImages(response.data);
         } catch (error) {
             console.error('Failed to load history:', error);
+            setToast({ message: 'Ошибка загрузки истории', type: 'error' });
         } finally {
             setLoading(false);
         }
     };
 
-    const handleDelete = async (id) => {
-        if (confirm('Удалить изображение?')) {
-            try {
-                await historyApi.delete(id);
-                setImages(prev => prev.filter(img => img.id !== id));
-                if (fullscreenIndex !== null) setFullscreenIndex(null);
-            } catch (error) {
-                alert('Ошибка удаления');
-            }
+    const handleDeleteRequest = (id, e) => {
+        e?.stopPropagation();
+        setDeleteConfirmId(id);
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteConfirmId) return;
+        const id = deleteConfirmId;
+        setDeleteConfirmId(null);
+        try {
+            await historyApi.delete(id);
+            setImages(prev => prev.filter(img => img.id !== id));
+            if (fullscreenIndex !== null) setFullscreenIndex(null);
+            setToast({ message: 'Фото удалено', type: 'success' });
+        } catch (error) {
+            setToast({ message: 'Ошибка удаления', type: 'error' });
         }
     };
 
@@ -148,12 +227,28 @@ const Gallery = () => {
             window.URL.revokeObjectURL(blobUrl);
         } catch (error) {
             console.error('Download failed:', error);
-            alert('Ошибка скачивания');
+            setToast({ message: 'Ошибка скачивания', type: 'error' });
         }
     };
 
     return (
         <div className="space-y-8">
+            {/* Toast */}
+            <AnimatePresence>
+                {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+            </AnimatePresence>
+
+            {/* Delete confirm */}
+            <AnimatePresence>
+                {deleteConfirmId && (
+                    <DeleteConfirm
+                        onConfirm={confirmDelete}
+                        onCancel={() => setDeleteConfirmId(null)}
+                    />
+                )}
+            </AnimatePresence>
+
+            {/* Fullscreen */}
             <AnimatePresence>
                 {fullscreenIndex !== null && images.length > 0 && (
                     <FullscreenViewer
@@ -170,20 +265,25 @@ const Gallery = () => {
                     Галерея
                 </h1>
                 <p className="mt-2 text-lg" style={{ color: 'hsl(220, 10%, 55%)' }}>
-                    Ваши сгенерированные изображения
+                    {!loading && images.length > 0 ? `${images.length} сгенерированных фото` : 'Ваши сгенерированные изображения'}
                 </p>
             </header>
 
             {loading ? (
-                <div className="flex justify-center p-12">
-                    <div
-                        className="w-8 h-8 rounded-full animate-spin"
-                        style={{ border: '2px solid hsla(175, 85%, 50%, 0.2)', borderTopColor: 'hsl(175, 85%, 50%)' }}
-                    />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {[1, 2, 3, 4, 5, 6].map(i => (
+                        <div key={i} className="aspect-[3/4] rounded-2xl animate-pulse"
+                            style={{ background: 'hsla(220, 20%, 8%, 0.5)', border: '1px solid hsla(175, 40%, 30%, 0.06)' }} />
+                    ))}
                 </div>
             ) : images.length === 0 ? (
-                <div className="text-center py-20" style={{ color: 'hsl(220, 10%, 55%)' }}>
-                    <p>Пока нет изображений. Создайте свою первую генерацию!</p>
+                <div className="text-center py-20 flex flex-col items-center" style={{ color: 'hsl(220, 10%, 55%)' }}>
+                    <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6"
+                        style={{ background: 'hsla(220, 20%, 8%, 0.5)' }}>
+                        <LucideImage size={48} className="opacity-30" />
+                    </div>
+                    <h3 className="text-xl font-medium mb-2" style={{ color: 'hsl(210, 40%, 90%)' }}>Пока нет изображений</h3>
+                    <p>Создайте свою первую генерацию!</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -234,7 +334,7 @@ const Gallery = () => {
                                         <Download size={18} />
                                     </button>
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
+                                        onClick={(e) => handleDeleteRequest(item.id, e)}
                                         className="p-2 rounded-lg transition-all duration-200"
                                         style={{ background: 'hsla(0, 65%, 50%, 0.15)', color: 'hsl(0, 70%, 70%)' }}
                                         title="Удалить"

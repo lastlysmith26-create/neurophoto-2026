@@ -71,7 +71,7 @@ router.post("/", async (req, res) => {
 
         if (authError || !user) return res.status(401).json({ error: "Unauthorized" });
 
-        const { name, description, gender, photos } = req.body;
+        const { name, description, gender, photos, age, height } = req.body;
 
         if (!name || !gender) {
             return res.status(400).json({ error: "Name and gender are required" });
@@ -84,6 +84,8 @@ router.post("/", async (req, res) => {
                 name,
                 description: description || "",
                 gender,
+                age: age ? parseInt(age) : null,
+                height: height || null,
                 photos: photos || []
             }])
             .select()
@@ -114,6 +116,8 @@ router.put("/:id", async (req, res) => {
                 name: req.body.name,
                 description: req.body.description,
                 gender: req.body.gender,
+                age: req.body.age ? parseInt(req.body.age) : null,
+                height: req.body.height || null,
                 photos: req.body.photos,
                 updated_at: new Date().toISOString()
             })
@@ -139,6 +143,18 @@ router.delete("/:id", async (req, res) => {
 
         if (authError || !user) return res.status(401).json({ error: "Unauthorized" });
 
+        // 1. Delete associated generations first (to avoid FK constraint error)
+        const { error: genError } = await supabase
+            .from('generations')
+            .delete()
+            .eq('model_id', req.params.id);
+
+        if (genError) {
+            console.error("Error deleting model generations:", genError);
+            // Don't throw here, try to delete model anyway (maybe no generations or RLS handles it)
+        }
+
+        // 2. Delete the model
         const { error } = await supabase
             .from('models')
             .delete()
@@ -147,6 +163,7 @@ router.delete("/:id", async (req, res) => {
         if (error) throw error;
         res.json({ success: true });
     } catch (error) {
+        console.error("Delete model error:", error);
         res.status(500).json({ error: "Failed to delete model" });
     }
 });
