@@ -15,17 +15,21 @@ const presetsRoutes = require("./routes/presets");
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// CORS configuration
-const allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:4173', // vite preview
-];
-if (process.env.CORS_ORIGIN) {
-    allowedOrigins.push(process.env.CORS_ORIGIN);
-}
-
 app.use(cors({
-    origin: process.env.CORS_ORIGIN ? allowedOrigins : '*',
+    origin: (origin, callback) => {
+        const allowedOrigins = [
+            'http://localhost:5173',
+            'http://localhost:4173',
+        ];
+        if (process.env.CORS_ORIGIN) allowedOrigins.push(process.env.CORS_ORIGIN);
+
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+            callback(null, true);
+        } else {
+            console.log("Blocked by CORS:", origin);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true,
 }));
 app.use(express.json({ limit: "50mb" }));
